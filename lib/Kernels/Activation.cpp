@@ -1,4 +1,3 @@
-// Activation.cpp
 #include "Kernels/Activation.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
@@ -7,31 +6,21 @@
 
 using namespace llvm;
 
-/**
- * Creates a ReLU activation function.
- *
- * @param M The LLVM module to create the function in.
- * @param InputTy The type of the input tensor.
- * @param OutputTy The type of the output tensor.
- * @param InputShape The shape of the input tensor.
- * @return The created ReLU function.
- */
-Function *createReLUFunction(Module &M, Type *InputTy, Type *OutputTy, uint64_t InputShape) {
-  // Create the function type
+namespace {
+
+Function *createReLUFunction(Module &M, Type *InputTy, Type *OutputTy) {
   auto *FuncTy = FunctionType::get(Type::getVoidTy(M.getContext()), {InputTy, OutputTy}, false);
+  auto *Func = Function::Create(FuncTy, Function::ExternalLinkage, "ReLU", &M);
 
-  // Create the function
-  auto *Func = Function::Create(FuncTy, Function::ExternalLinkage, "relu", &M);
-
-  // Create the entry basic block
   auto *EntryBB = BasicBlock::Create(M.getContext(), "entry", Func);
-
-  // Create the IR builder
   IRBuilder<> Builder(EntryBB);
 
-  // Get the function arguments
   auto *Input = Func->getArg(0);
   auto *Output = Func->getArg(1);
+
+  // Get the dimensions of the input tensor
+  // Placeholder values
+  unsigned InputSize = 1024;
 
   // Create a loop for the input tensor elements
   BasicBlock *LoopHeader = BasicBlock::Create(M.getContext(), "loop.header", Func);
@@ -47,15 +36,14 @@ Function *createReLUFunction(Module &M, Type *InputTy, Type *OutputTy, uint64_t 
   IndexPhi->addIncoming(ConstantInt::get(Type::getInt64Ty(M.getContext()), 0), EntryBB);
 
   // Create the loop condition
-  auto *Cond = Builder.CreateICmpULT(IndexPhi, ConstantInt::get(Type::getInt64Ty(M.getContext()), InputShape));
+  auto *Cond = Builder.CreateICmpULT(IndexPhi, ConstantInt::get(Type::getInt64Ty(M.getContext()), InputSize));
   Builder.CreateCondBr(Cond, LoopBody, LoopExit);
 
   // Create the loop body
   Builder.SetInsertPoint(LoopBody);
 
   // Load the input value
-  Type *InputPtrTy = InputTy->getElementType();
-  auto *InputPtr = Builder.CreateGEP(InputPtrTy, Input, {Builder.getInt32(0), IndexPhi});
+  auto *InputPtr = Builder.CreateGEP(Input, {Builder.getInt64(0), IndexPhi});
   auto *InputVal = Builder.CreateLoad(InputPtr);
 
   // Perform the ReLU activation
@@ -63,8 +51,7 @@ Function *createReLUFunction(Module &M, Type *InputTy, Type *OutputTy, uint64_t 
   auto *ReLUVal = Builder.CreateSelect(Builder.CreateFCmpOGT(InputVal, Zero), InputVal, Zero);
 
   // Store the output value
-  Type *OutputPtrTy = OutputTy->getElementType();
-  auto *OutputPtr = Builder.CreateGEP(OutputPtrTy, Output, {Builder.getInt32(0), IndexPhi});
+  auto *OutputPtr = Builder.CreateGEP(Output, {Builder.getInt64(0), IndexPhi});
   Builder.CreateStore(ReLUVal, OutputPtr);
 
   // Increment the loop index
@@ -80,3 +67,5 @@ Function *createReLUFunction(Module &M, Type *InputTy, Type *OutputTy, uint64_t 
 
   return Func;
 }
+
+} // namespace

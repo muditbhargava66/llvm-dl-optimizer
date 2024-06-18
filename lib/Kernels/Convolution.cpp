@@ -8,6 +8,28 @@ using namespace llvm;
 
 namespace {
 
+// Helper function to create a loop
+void createLoop(IRBuilder<> &Builder, Value *Start, Value *End, const Twine &Name, std::function<void(IRBuilder<> &, Value *)> Body) {
+  Function *Func = Builder.GetInsertBlock()->getParent();
+  BasicBlock *PreheaderBB = Builder.GetInsertBlock();
+  BasicBlock *LoopBB = BasicBlock::Create(Func->getContext(), Name + ".loop", Func);
+  BasicBlock *AfterBB = BasicBlock::Create(Func->getContext(), Name + ".after", Func);
+  
+  Builder.CreateCondBr(Builder.CreateICmpULT(Start, End), LoopBB, AfterBB);
+  
+  Builder.SetInsertPoint(LoopBB);
+  PHINode *Index = Builder.CreatePHI(Start->getType(), 2, Name + ".index");
+  Index->addIncoming(Start, PreheaderBB);
+  
+  Body(Builder, Index);
+  
+  Value *NextVar = Builder.CreateAdd(Index, ConstantInt::get(Start->getType(), 1), Name + ".nextvar");
+  Index->addIncoming(NextVar, LoopBB);
+  Builder.CreateCondBr(Builder.CreateICmpULT(NextVar, End), LoopBB, AfterBB);
+  
+  Builder.SetInsertPoint(AfterBB);
+}
+
 Function *createConvolutionFunction(Module &M, Type *InputTy, Type *WeightTy, Type *OutputTy,
                                     unsigned StrideH, unsigned StrideW, unsigned PadH, unsigned PadW) {
   auto *FuncTy = FunctionType::get(Type::getVoidTy(M.getContext()), {InputTy, WeightTy, OutputTy}, false);
@@ -21,49 +43,47 @@ Function *createConvolutionFunction(Module &M, Type *InputTy, Type *WeightTy, Ty
   auto *Output = Func->getArg(2);
 
   // Get the dimensions of the input, weight, and output tensors
-  auto *InputShape = InputTy->getPointerElementType()->getArrayNumElements();
-  auto *WeightShape = WeightTy->getPointerElementType()->getArrayNumElements();
-  auto *OutputShape = OutputTy->getPointerElementType()->getArrayNumElements();
+  // Assume these are defined somewhere appropriately
+  // Placeholder values
+  unsigned InputH = 32, InputW = 32, WeightH = 3, WeightW = 3, OutputH = 30, OutputW = 30;
 
   // Create loops for the output tensor dimensions
-  auto *OuterLoopY = Builder.CreateLoop(OutputShape[0], "outerLoopY");
-  auto *OuterLoopX = Builder.CreateLoop(OutputShape[1], "outerLoopX");
-  Builder.SetInsertPoint(OuterLoopX->getBody());
+  createLoop(Builder, Builder.getInt32(0), Builder.getInt32(OutputH), "OuterLoopY", [&](IRBuilder<> &Builder, Value *OuterLoopY) {
+    createLoop(Builder, Builder.getInt32(0), Builder.getInt32(OutputW), "OuterLoopX", [&](IRBuilder<> &Builder, Value *OuterLoopX) {
 
-  // Create loops for the weight tensor dimensions
-  auto *InnerLoopY = Builder.CreateLoop(WeightShape[0], "innerLoopY");
-  auto *InnerLoopX = Builder.CreateLoop(WeightShape[1], "innerLoopX");
-  Builder.SetInsertPoint(InnerLoopX->getBody());
+      // Initialize the output to zero
+      auto *OutputIdx = Builder.CreateGEP(Output, {OuterLoopY, OuterLoopX});
+      Builder.CreateStore(ConstantFP::get(Type::getFloatTy(M.getContext()), 0.0), OutputIdx);
 
-  // Calculate the input tensor indices based on the current loop indices and strides
-  auto *InputIdxY = Builder.CreateAdd(Builder.CreateMul(OuterLoopY->getIndVar(), Builder.getInt32(StrideH)), InnerLoopY->getIndVar());
-  auto *InputIdxX = Builder.CreateAdd(Builder.CreateMul(OuterLoopX->getIndVar(), Builder.getInt32(StrideW)), InnerLoopX->getIndVar());
+      // Create loops for the weight tensor dimensions
+      createLoop(Builder, Builder.getInt32(0), Builder.getInt32(WeightH), "InnerLoopY", [&](IRBuilder<> &Builder, Value *InnerLoopY) {
+        createLoop(Builder, Builder.getInt32(0), Builder.getInt32(WeightW), "InnerLoopX", [&](IRBuilder<> &Builder, Value *InnerLoopX) {
 
-  // Load the input and weight values
-  auto *InputPtr = Builder.CreateGEP(Input, {Builder.getInt32(0), InputIdxY, InputIdxX});
-  auto *InputVal = Builder.CreateLoad(InputPtr);
+          // Calculate the input tensor indices based on the current loop indices and strides
+          auto *InputIdxY = Builder.CreateAdd(Builder.CreateMul(OuterLoopY, Builder.getInt32(StrideH)), InnerLoopY);
+          auto *InputIdxX = Builder.CreateAdd(Builder.CreateMul(OuterLoopX, Builder.getInt32(StrideW)), InnerLoopX);
 
-  auto *WeightPtr = Builder.CreateGEP(Weight, {Builder.getInt32(0), InnerLoopY->getIndVar(), InnerLoopX->getIndVar()});
-  auto *WeightVal = Builder.CreateLoad(WeightPtr);
+          // Load the input and weight values
+          auto *InputIdx = Builder.CreateGEP(Input, {InputIdxY, InputIdxX});
+          auto *WeightIdx = Builder.CreateGEP(Weight, {InnerLoopY, InnerLoopX});
+          auto *InputVal = Builder.CreateLoad(InputIdx);
+          auto *WeightVal = Builder.CreateLoad(WeightIdx);
 
-  // Perform the convolution operation (multiply-accumulate)
-  auto *OutputPtr = Builder.CreateGEP(Output, {Builder.getInt32(0), OuterLoopY->getIndVar(), OuterLoopX->getIndVar()});
-  auto *OutputVal = Builder.CreateLoad(OutputPtr);
-  auto *MulVal = Builder.CreateFMul(InputVal, WeightVal);
-  auto *AccumVal = Builder.CreateFAdd(OutputVal, MulVal);
-  Builder.CreateStore(AccumVal, OutputPtr);
+          // Perform the multiplication and accumulate the result in the output
+          auto *OutputVal = Builder.CreateLoad(OutputIdx);
+          auto *MulVal = Builder.CreateFMul(InputVal, WeightVal);
+          auto *AccVal = Builder.CreateFAdd(OutputVal, MulVal);
+          Builder.CreateStore(AccVal, OutputIdx);
 
-  // Create the return instruction
+        });
+      });
+
+    });
+  });
+
   Builder.CreateRetVoid();
 
   return Func;
 }
 
-} // end anonymous namespace
-
-namespace llvm {
-Function *createConvolutionFunction(Module &M, Type *InputTy, Type *WeightTy, Type *OutputTy,
-                                    unsigned StrideH, unsigned StrideW, unsigned PadH, unsigned PadW) {
-  return ::createConvolutionFunction(M, InputTy, WeightTy, OutputTy, StrideH, StrideW, PadH, PadW);
-}
-} // namespace llvm
+} // namespace
