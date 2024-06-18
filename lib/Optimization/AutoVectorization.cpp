@@ -7,6 +7,7 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
+#include "llvm/Pass.h"
 
 using namespace llvm;
 
@@ -28,7 +29,7 @@ struct AutoVectorizationPass : public FunctionPass {
     bool Changed = false;
 
     for (auto *Loop : LI) {
-      if (!Loop->isInnermost() || !Loop->isLoopSimplifyForm())
+      if (!Loop->getSubLoops().empty() || !Loop->isLoopSimplifyForm())
         continue;
 
       if (canVectorizeLoop(Loop, SE, TTI, DT)) {
@@ -61,10 +62,6 @@ private:
     if (isa<SCEVCouldNotCompute>(TripCount))
       return false;
 
-    // Check if the loop is supported by the target's vectorizer
-    if (!TTI.isLegalToVectorize(L))
-      return false;
-
     // Check if the loop has no memory dependencies
     for (auto *BB : L->getBlocks()) {
       for (auto &I : *BB) {
@@ -79,8 +76,21 @@ private:
   }
 
   void vectorizeLoop(Loop *L, ScalarEvolution &SE, TargetTransformInfo &TTI, DominatorTree &DT) {
+    // Setup the LoopVectorizePass
     LoopVectorizePass LVP;
-    LVP.run(*L, SE, TTI, DT);
+
+    // Create a dummy FunctionAnalysisManager
+    FunctionAnalysisManager FAM;
+
+    // Register required analyses
+    FAM.registerPass([&] { return LoopAnalysis(); });
+    FAM.registerPass([&] { return ScalarEvolutionAnalysis(); });
+    FAM.registerPass([&] { return TargetIRAnalysis(); });
+    FAM.registerPass([&] { return DominatorTreeAnalysis(); });
+
+    // Run the LoopVectorizePass on the function containing the loop
+    Function &F = *L->getHeader()->getParent();
+    LVP.run(F, FAM);
   }
 };
 

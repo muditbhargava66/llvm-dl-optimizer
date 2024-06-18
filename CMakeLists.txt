@@ -13,6 +13,8 @@ find_package(LLVM REQUIRED CONFIG)
 
 # Include LLVM headers
 include_directories(${LLVM_INCLUDE_DIRS})
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
 # Link against LLVM libraries
 link_directories(${LLVM_LIBRARY_DIRS})
@@ -22,20 +24,23 @@ include_directories(include)
 
 # Add the source files
 file(GLOB_RECURSE SOURCES "lib/*.cpp")
+list(APPEND SOURCES "src/main.cpp")  # Ensure the main function file is included
+message(STATUS "Source files: ${SOURCES}")
 
 # Add the executable
 add_executable(llvm-dl-optimizer ${SOURCES})
 
 # Link against LLVM libraries
-target_link_libraries(llvm-dl-optimizer ${LLVM_LIBRARIES})
+llvm_map_components_to_libnames(llvm_libs support core irreader passes)
+target_link_libraries(llvm-dl-optimizer ${llvm_libs})
 
 # Enable RTTI
 set_target_properties(llvm-dl-optimizer PROPERTIES
-                      COMPILE_FLAGS "-fno-rtti"
-                      LINK_FLAGS "-fno-rtti")
+                      COMPILE_FLAGS "-frtti"
+                      LINK_FLAGS "-frtti")
 
-# Add the test directory
+# Add the test directory (uncomment if needed)
 # add_subdirectory(tests)
 
-# Add the examples directory
+# Add the examples directory (uncomment if needed)
 # add_subdirectory(examples)

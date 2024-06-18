@@ -21,15 +21,15 @@ struct LoopFusionPass : public FunctionPass {
     LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     bool Changed = false;
 
-    for (auto *Loop : LI) {
-      if (Loop->empty() || Loop->getSubLoops().size() != 1)
+    for (auto &L : LI) {
+      if (L->empty() || L->getSubLoops().size() != 1)
         continue;
 
-      Loop *InnerLoop = Loop->getSubLoops()[0];
-      if (!isFusionCandidate(Loop, InnerLoop))
+      Loop *InnerLoop = L->getSubLoops()[0];
+      if (!isFusionCandidate(L, InnerLoop))
         continue;
 
-      fuseLoops(Loop, InnerLoop);
+      fuseLoops(L, InnerLoop);
       Changed = true;
     }
 
@@ -64,7 +64,11 @@ private:
   void fuseLoops(Loop *OuterLoop, Loop *InnerLoop) {
     // Move the inner loop's basic blocks to the outer loop's exit block
     BasicBlock *OuterLoopExitBlock = OuterLoop->getExitBlock();
-    InnerLoop->moveTo(OuterLoopExitBlock);
+    if (OuterLoopExitBlock) {
+      for (auto *BB : InnerLoop->blocks()) {
+        BB->moveBefore(OuterLoopExitBlock);
+      }
+    }
 
     // Update the loop info after moving the basic blocks
     LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();

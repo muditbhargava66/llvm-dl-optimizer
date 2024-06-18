@@ -4,6 +4,7 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include "llvm/IR/IRBuilder.h"
 
 using namespace llvm;
 
