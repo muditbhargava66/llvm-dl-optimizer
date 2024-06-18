@@ -30,3 +30,54 @@
 *.exe
 *.out
 *.app
+
+# Build directories
+build/
+cmake-build-*/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+
+# Doxygen documentation
+docs/html/
+docs/latex/
+
+# Test output files
+tests/test_output/
+
+# Example output files
+examples/example_output/
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# macOS-specific files
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Linux-specific files
+*~
+.fuse_hidden*
+.nfs*
+
+# Windows-specific files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
